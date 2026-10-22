@@ -1,0 +1,48 @@
+# Editores / IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code config local
+.claude/settings.local.json
+
+# Java / Gradle
+backend/build/
+backend/.gradle/
+backend/out/
+backend/bin/
+*.class
+
+# Frontend build output servido por Spring Boot (regenerado por `npm run build`)
+backend/src/main/resources/static/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+
+# Secrets / env
+.env
+.env.local
+.env.*.local
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-prod.yml
+
+# Docker volumes
+postgres-data/
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfvars
+
+# Sistema
+Thumbs.db
+
+# Logs locales del script dev.sh
+.dev-logs/

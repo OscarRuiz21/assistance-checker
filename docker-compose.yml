@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: assistance-postgres
+    environment:
+      POSTGRES_DB: assistance
+      POSTGRES_USER: assistance
+      POSTGRES_PASSWORD: assistance_dev
+      TZ: America/Mexico_City
+    ports:
+      - "55432:5432"
+    volumes:
+      - assistance_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistance -d assistance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  assistance_pgdata:
