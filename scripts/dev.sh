@@ -17,6 +17,42 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT/.dev-logs"
 mkdir -p "$LOG_DIR"
 
+# Variables de entorno de desarrollo local, según el contrato de entorno
+# (docs/16-readiness-plan.md, docs/02-arquitectura.md). Perfil "local":
+# Postgres de docker-compose.yml (puerto host 55432, db/user "assistance"),
+# rol de aplicación "assistance_app" sin privilegios (migración V3 lo crea),
+# JWT local con secreto de desarrollo y PII_KEY de desarrollo (NO usar en
+# demo/prod; esos perfiles exigen sus propios valores vía secretos reales).
+export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}"
+export DB_URL="${DB_URL:-jdbc:postgresql://localhost:55432/assistance}"
+export DB_MIGRATION_USER="${DB_MIGRATION_USER:-assistance}"
+export DB_MIGRATION_PASSWORD="${DB_MIGRATION_PASSWORD:-assistance_dev}"
+export DB_APP_USER="${DB_APP_USER:-assistance_app}"
+export DB_APP_PASSWORD="${DB_APP_PASSWORD:-assistance_app_dev}"
+export APP_PII_KEY="${APP_PII_KEY:-dev-only-pii-key-do-not-use-in-prod}"
+export APP_JWT_SECRET="${APP_JWT_SECRET:-dev-only-jwt-secret-do-not-use-in-prod}"
+export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5173}"
+export SERVER_PORT="${SERVER_PORT:-8080}"
+export MANAGEMENT_PORT="${MANAGEMENT_PORT:-8081}"
+
+# Espera activa a que el backend responda /actuator/health antes de seguir.
+# $1: URL a sondear, $2: timeout total en segundos (default 90).
+wait_for_backend_health() {
+  local url="$1"
+  local timeout="${2:-90}"
+  local waited=0
+  echo "▶ esperando a que el backend responda en $url ..."
+  until curl -fsS "$url" >/dev/null 2>&1; do
+    if [ "$waited" -ge "$timeout" ]; then
+      echo "✗ timeout ($timeout s) esperando $url — revisa $LOG_DIR/backend.log"
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  echo "✓ backend saludable después de ${waited}s"
+}
+
 cmd="${1:-up}"
 
 case "$cmd" in
@@ -24,8 +60,10 @@ case "$cmd" in
     echo "▶ docker compose up postgres"
     (cd "$ROOT" && docker compose up -d)
 
-    echo "▶ backend (Spring Boot) → http://localhost:8080"
+    echo "▶ backend (Spring Boot, perfil $SPRING_PROFILES_ACTIVE) → http://localhost:$SERVER_PORT"
     (cd "$ROOT/backend" && nohup ./gradlew --no-daemon bootRun > "$LOG_DIR/backend.log" 2>&1 &)
+
+    wait_for_backend_health "http://localhost:${MANAGEMENT_PORT}/actuator/health" 120
 
     echo "▶ frontend (Vite, expuesto 0.0.0.0) → http://localhost:5173"
     (cd "$ROOT/frontend" && nohup npm run dev > "$LOG_DIR/frontend.log" 2>&1 &)

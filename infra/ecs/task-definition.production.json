@@ -1,0 +1,47 @@
+{
+  "_comment": "Plantilla base para aws-actions/amazon-ecs-render-task-definition. El campo 'image' lo sobreescribe el workflow deploy.yml con el tag del SHA a desplegar. Mantener en sincronía manualmente con la task definition generada por Terraform (infra/envs/prod) tras cada cambio de CPU/memoria/env vars.",
+  "family": "assistance-prod-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "REEMPLAZAR_CON_OUTPUT_TERRAFORM_execution_role_arn",
+  "taskRoleArn": "REEMPLAZAR_CON_OUTPUT_TERRAFORM_task_role_arn",
+  "containerDefinitions": [
+    {
+      "name": "assistance-backend",
+      "image": "REEMPLAZADO_POR_CI",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8080, "protocol": "tcp" },
+        { "containerPort": 8081, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" },
+        { "name": "SERVER_PORT", "value": "8080" },
+        { "name": "MANAGEMENT_PORT", "value": "8081" },
+        { "name": "AUTH_ISSUER_URI", "value": "REEMPLAZAR_CON_COGNITO_ISSUER" }
+      ],
+      "secrets": [
+        { "name": "DB_MIGRATION_PASSWORD", "valueFrom": "REEMPLAZAR_CON_ARN_SECRETO:password::" },
+        { "name": "DB_APP_PASSWORD", "valueFrom": "REEMPLAZAR_CON_ARN_SECRETO" },
+        { "name": "APP_PII_KEY", "valueFrom": "REEMPLAZAR_CON_ARN_SECRETO" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/assistance-prod-app",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

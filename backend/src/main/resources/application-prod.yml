@@ -1,0 +1,127 @@
+# Perfil "prod" — activado con SPRING_PROFILES_ACTIVE=prod.
+#
+# Regla de oro: NINGÚN valor aquí tiene default inseguro. Todo viene de
+# ${VAR} sin fallback; si una variable requerida falta, el arranque debe
+# fallar rápido (fail-fast) en vez de arrancar con un valor por omisión.
+#
+# Este archivo complementa application.yml (que define auth/CORS/seguridad
+# comunes, propiedad de otro agente). Aquí solo va lo específico de
+# despliegue en AWS: logging estructurado, management port separado,
+# datasource/hikari dimensionado, probes y forwarded headers para el ALB.
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_APP_USER}
+    password: ${DB_APP_PASSWORD}
+    hikari:
+      # Dimensionado para ECS Fargate con 2 tasks mínimo: pool conservador
+      # por task para no agotar max_connections de RDS (ver docs/11, runbook DB).
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: assistance-prod-pool
+      leak-detection-threshold: 60000
+
+  flyway:
+    # Flyway corre al arrancar la app, con el usuario de migración (NO el
+    # de aplicación). Debe ser owner/superuser de las tablas para poder
+    # crear/alterar esquema, políticas RLS y el rol assistance_app.
+    user: ${DB_MIGRATION_USER}
+    password: ${DB_MIGRATION_PASSWORD}
+    # Lock de Flyway en BD: con más de una task ECS arrancando en paralelo,
+    # solo una gana el lock y migra; las demás esperan. Ver
+    # docs/17-ci-cd-y-despliegue.md § riesgo de migraciones concurrentes.
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: false
+        generate_statistics: false
+    open-in-view: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  # Detrás de ALB: confía en X-Forwarded-* para que Spring arme URLs/scheme
+  # correctos (importante para cookies "secure" y redirects).
+  forward-headers-strategy: native
+  compression:
+    enabled: true
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  shutdown: graceful
+
+# Management (actuator) en puerto separado del tráfico de usuario. Solo
+# accesible dentro de la VPC (el ALB/target group de usuarios no debe
+# enrutar a este puerto); liveness/readiness para ECS task definition.
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    db:
+      enabled: true
+  metrics:
+    tags:
+      application: assistance-checker-backend
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# Logging estructurado JSON (ECS = Elastic Common Schema, no confundir con
+# AWS ECS el orquestador) para que CloudWatch Logs Insights lo parsee sin
+# configuración adicional. Nivel INFO en el paquete de la app; sin SQL
+# verboso. La redacción de PII (CURP/RFC/NSS/PIN) en mensajes de log es
+# responsabilidad del código de dominio (ver docs/02-arquitectura.md
+# §Observabilidad); este perfil no debe bajar a DEBUG en producción.
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: INFO
+    com.assistance: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.security: WARN
+
+# app.jwt-secret NO debe definirse aquí ni tener default: en prod el issuer
+# es Cognito (AUTH_ISSUER_URI) y la app debe abortar el arranque si detecta
+# un APP_JWT_SECRET no vacío en este perfil (ver validación de A en
+# application.yml / SecurityConfig). AUTH_ISSUER_URI es responsabilidad del
+# agente que implementa Spring Security; aquí solo documentamos que debe
+# apuntar al user pool de Cognito correspondiente al ambiente:
+#   AUTH_ISSUER_URI=https://cognito-idp.<region>.amazonaws.com/<user-pool-id>
