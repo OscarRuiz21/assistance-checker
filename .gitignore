@@ -29,8 +29,7 @@ frontend/.vite/
 .env
 .env.local
 .env.*.local
-backend/src/main/resources/application-local.yml
-backend/src/main/resources/application-prod.yml
+backend/src/main/resources/application-secrets*.yml
 
 # Docker volumes
 postgres-data/
