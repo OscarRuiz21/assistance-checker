@@ -11,6 +11,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Attendance",
-        allowedDependencies = {"shared::api", "device::api", "employee::api"}
+        allowedDependencies = {"shared::api", "device::api", "employee::api", "compliance::api"}
 )
 package com.assistance.attendance;

@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -34,8 +35,12 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), POLL_INTERVAL_MS);
+    // Wrapper local (no una referencia directa a `refresh` en el cuerpo del
+    // efecto): el fetch inicial + polling es "sincronizar con un sistema
+    // externo" (el backend), el caso de uso que los efectos sí deben cubrir.
+    const tick = () => void refresh();
+    tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [refresh]);
 
@@ -51,6 +56,17 @@ export default function Dashboard() {
       void refresh(); // KPIs frescos después del nuevo evento
     },
   );
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      await api.exportCsv();
+    } catch (e) {
+      setErrorMsg(e instanceof ApiError ? e.message : "No se pudo exportar el CSV");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function seed() {
     setBusy(true);
@@ -118,13 +134,14 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href={api.exportCsvUrl()}
-                className="touch-target inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-sm font-medium hover:bg-secondary/80"
+              <button
+                onClick={exportCsv}
+                disabled={exporting}
+                className="touch-target inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-sm font-medium hover:bg-secondary/80 disabled:opacity-50"
                 title="Exporta los últimos 30 días"
               >
-                <Download className="h-4 w-4" /> CSV
-              </a>
+                <Download className={`h-4 w-4 ${exporting ? "animate-pulse" : ""}`} /> CSV
+              </button>
               <button
                 onClick={seed}
                 disabled={busy}

@@ -45,6 +45,18 @@ public class EventRaw {
     @Column(name = "is_valid", nullable = false)
     private boolean valid = true;
 
+    @Column(name = "invalidated_by")
+    private UUID invalidatedBy;
+
+    @Column(name = "invalidated_reason")
+    private String invalidatedReason;
+
+    @Column(name = "invalidated_at")
+    private Instant invalidatedAt;
+
+    @Column(name = "recorded_by_user_id")
+    private UUID recordedByUserId;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getTenantId() { return tenantId; }
@@ -69,4 +81,12 @@ public class EventRaw {
     public void setNfcCardId(UUID nfcCardId) { this.nfcCardId = nfcCardId; }
     public boolean isValid() { return valid; }
     public void setValid(boolean valid) { this.valid = valid; }
+    public UUID getInvalidatedBy() { return invalidatedBy; }
+    public void setInvalidatedBy(UUID invalidatedBy) { this.invalidatedBy = invalidatedBy; }
+    public String getInvalidatedReason() { return invalidatedReason; }
+    public void setInvalidatedReason(String invalidatedReason) { this.invalidatedReason = invalidatedReason; }
+    public Instant getInvalidatedAt() { return invalidatedAt; }
+    public void setInvalidatedAt(Instant invalidatedAt) { this.invalidatedAt = invalidatedAt; }
+    public UUID getRecordedByUserId() { return recordedByUserId; }
+    public void setRecordedByUserId(UUID recordedByUserId) { this.recordedByUserId = recordedByUserId; }
 }

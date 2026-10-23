@@ -3,6 +3,9 @@ package com.assistance.attendance.internal.web;
 import com.assistance.attendance.api.AttendanceApi;
 import com.assistance.attendance.api.DailyBreakdown;
 import com.assistance.attendance.api.EmployeeWorkSummary;
+import com.assistance.attendance.internal.service.TimezoneResolver;
+import com.assistance.shared.api.TenantContext;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,15 +27,16 @@ import java.util.UUID;
 @RequestMapping("/api/employees")
 public class EmployeeStatsController {
 
-    private static final ZoneId TZ_MX = ZoneId.of("America/Mexico_City");
-
     private final AttendanceApi attendance;
+    private final TimezoneResolver timezoneResolver;
 
-    public EmployeeStatsController(AttendanceApi attendance) {
+    public EmployeeStatsController(AttendanceApi attendance, TimezoneResolver timezoneResolver) {
         this.attendance = attendance;
+        this.timezoneResolver = timezoneResolver;
     }
 
     @GetMapping("/summaries")
+    @PreAuthorize("hasAnyRole('super_admin','tenant_admin','rh','supervisor')")
     public List<EmployeeWorkSummary> summaries(
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to) {
@@ -41,6 +45,7 @@ public class EmployeeStatsController {
     }
 
     @GetMapping("/{id}/daily")
+    @PreAuthorize("hasAnyRole('super_admin','tenant_admin','rh','supervisor')")
     public List<DailyBreakdown> daily(
             @PathVariable UUID id,
             @RequestParam(required = false) LocalDate from,
@@ -52,10 +57,11 @@ public class EmployeeStatsController {
     private record Range(Instant from, Instant to) {}
 
     private Range resolveRange(LocalDate from, LocalDate to, int defaultDaysBack) {
-        LocalDate fromD = from != null ? from : LocalDate.now(TZ_MX).minusDays(defaultDaysBack);
-        LocalDate toD = to != null ? to : LocalDate.now(TZ_MX);
+        ZoneId tz = ZoneId.of(timezoneResolver.resolve(TenantContext.require()));
+        LocalDate fromD = from != null ? from : LocalDate.now(tz).minusDays(defaultDaysBack);
+        LocalDate toD = to != null ? to : LocalDate.now(tz);
         return new Range(
-                fromD.atStartOfDay(TZ_MX).toInstant(),
-                toD.plusDays(1).atStartOfDay(TZ_MX).toInstant());
+                fromD.atStartOfDay(tz).toInstant(),
+                toD.plusDays(1).atStartOfDay(tz).toInstant());
     }
 }

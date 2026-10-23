@@ -9,7 +9,9 @@ import java.util.UUID;
 
 public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
 
-    Optional<Employee> findByEmployeeNumberAndStatus(String employeeNumber, String status);
+    Optional<Employee> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
 
-    List<Employee> findAllByStatusOrderByFullName(String status);
+    Optional<Employee> findByTenantIdAndEmployeeNumberAndStatus(UUID tenantId, String employeeNumber, String status);
+
+    List<Employee> findAllByTenantIdAndStatusOrderByFullName(UUID tenantId, String status);
 }

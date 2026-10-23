@@ -8,7 +8,8 @@ import { ScreenShell } from "@/components/ScreenShell";
 import { AvatarInitials } from "@/components/AvatarInitials";
 import { PinPad } from "@/components/PinPad";
 import { SuccessOverlay } from "@/components/SuccessOverlay";
-import { EventTypePicker, suggestEventType } from "@/components/EventTypePicker";
+import { EventTypePicker } from "@/components/EventTypePicker";
+import { suggestEventType } from "@/lib/eventSuggestion";
 import { beepError, beepSuccess, vibrate } from "@/lib/feedback";
 
 const SUCCESS_REDIRECT_MS = 2800;
@@ -37,13 +38,18 @@ export function NfcEntry() {
   const [success, setSuccess] = useState<{ name: string; time: string; type: EventType } | null>(null);
   const [selectedType, setSelectedType] = useState<EventType | null>(null);
 
-  const suggestion = useMemo(suggestEventType, []);
+  const suggestion = useMemo(() => suggestEventType(), []);
 
   useEffect(() => {
     if (!uid) {
       navigate("/k/error?reason=missing-uid", { replace: true });
       return;
     }
+    // El UID de tarjeta es una credencial (equivalente a un PAN corto) y NO
+    // debe quedar en el historial del browser/logs del navegador más tiempo
+    // del necesario para leerlo una vez. Lo limpiamos de la URL visible sin
+    // disparar otra navegación (replaceState no re-renderiza la ruta).
+    window.history.replaceState(null, "", "/k");
     api.employeeByCard(uid)
       .then(setEmployee)
       .catch((e: ApiError) => {

@@ -10,7 +10,9 @@ Arquitectura, modelo de datos y plan técnico del demo: ver [docs/](./docs/).
 assistance-checker/
 ├── backend/           Spring Boot 3.5 + Spring Modulith 1.4 + Postgres 16 + Flyway
 ├── frontend/          React 18 + Vite + Tailwind + Recharts (kiosko + admin)
-├── infra/             Terraform (AWS Lightsail demo, Fargate prod) — pendiente
+├── infra/             Terraform (AWS): modules/{network,database,app} + envs/{staging,prod,demo}
+├── .github/           CI (ci.yml), despliegue (deploy.yml), dependabot.yml
+├── Dockerfile         Build multi-stage (frontend → bootJar → imagen JRE)
 ├── scripts/dev.sh     Helper para arrancar todo en local
 └── docs/              Documentación del producto y la arquitectura
 ```
@@ -77,9 +79,45 @@ cd backend && ./gradlew test --tests com.assistance.ModularityTests
 curl http://localhost:8080/actuator/modulith | jq
 ```
 
+## CI/CD y despliegue
+
+Pipeline completo en GitHub Actions (`.github/workflows/ci.yml` y
+`deploy.yml`): lint + build del frontend, tests unitarios/arquitectura del
+backend (`./gradlew test`, incluye `ModularityTests` + JaCoCo), tests de
+integración con Testcontainers (`./gradlew integrationTest`), escaneo de
+seguridad (gitleaks + Trivy) y build/push de la imagen Docker a GHCR. El
+despliegue a AWS (ECS Fargate) usa OIDC (sin access keys) y requiere
+aprobación manual en el environment `production` de GitHub.
+
+Infraestructura como código en `infra/` (Terraform, AWS): VPC, RDS
+Postgres 16 Multi-AZ (prod), ALB con TLS, ECS Fargate, Secrets Manager,
+CloudWatch + alarmas. Ver el detalle completo, diagramas, variables/secretos
+requeridos y runbooks de rollback/restauración en
+[docs/17-ci-cd-y-despliegue.md](./docs/17-ci-cd-y-despliegue.md).
+
+### Variables de entorno de la app (todos los perfiles)
+
+| Variable | Descripción |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | `local` \| `demo` \| `prod` |
+| `DB_URL`, `DB_APP_USER`, `DB_APP_PASSWORD` | Conexión de la app (rol sin privilegios, RLS) |
+| `DB_MIGRATION_USER`, `DB_MIGRATION_PASSWORD` | Usuario owner que corre Flyway al arrancar |
+| `APP_PII_KEY` | Clave de cifrado de columna (CURP/RFC/NSS) |
+| `AUTH_ISSUER_URI` | Issuer de Cognito (solo `prod`) |
+| `APP_JWT_SECRET` | Solo `local`/`demo`; debe estar vacío en `prod` |
+| `CORS_ORIGINS` | Lista de orígenes permitidos |
+| `SERVER_PORT` / `MANAGEMENT_PORT` | `8080` (API) / `8081` (actuator: health, info, metrics, prometheus) |
+
+`./scripts/dev.sh` ya exporta valores de desarrollo para todas estas
+variables (perfil `local`). `docker compose --profile full up` levanta
+Postgres + la app completa en modo `demo` usando el `Dockerfile` de la raíz
+(`docker compose up`, sin `--profile full`, sigue levantando solo Postgres
+como antes).
+
 ## Documentación clave
 
 - [docs/15-demo-mvp-plan.md](./docs/15-demo-mvp-plan.md) — Plan técnico del demo MVP.
 - [docs/03-modelo-datos.md](./docs/03-modelo-datos.md) — Modelo de datos completo de producción.
 - [docs/02-arquitectura.md](./docs/02-arquitectura.md) — Arquitectura de producción.
 - [docs/13-patrones-arquitectonicos.md](./docs/13-patrones-arquitectonicos.md) — Patrones de diseño aplicados.
+- [docs/17-ci-cd-y-despliegue.md](./docs/17-ci-cd-y-despliegue.md) — CI/CD, infraestructura y runbooks de despliegue.

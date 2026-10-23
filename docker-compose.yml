@@ -17,5 +17,44 @@ services:
       timeout: 5s
       retries: 10
 
+  # Servicio de aplicación completo (backend con frontend embebido), solo se
+  # levanta con `docker compose --profile full up`. El flujo de desarrollo
+  # normal (`scripts/dev.sh`, Postgres solo) sigue funcionando sin cambios
+  # con `docker compose up`.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: assistance-app
+    profiles: ["full"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      SERVER_PORT: "8080"
+      MANAGEMENT_PORT: "8081"
+      # DB_URL apunta al servicio postgres dentro de la red de compose
+      # (puerto interno 5432, no el 55432 publicado al host).
+      DB_URL: jdbc:postgresql://postgres:5432/assistance
+      DB_MIGRATION_USER: assistance
+      DB_MIGRATION_PASSWORD: assistance_dev
+      DB_APP_USER: assistance_app
+      DB_APP_PASSWORD: assistance_app_dev
+      # Clave de cifrado de PII (CURP/RFC/NSS) — valor de ejemplo SOLO para
+      # el perfil demo local; nunca reutilizar en staging/prod.
+      APP_PII_KEY: ${APP_PII_KEY:-demo-only-32-byte-placeholder-key}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-demo-only-jwt-secret-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   assistance_pgdata:

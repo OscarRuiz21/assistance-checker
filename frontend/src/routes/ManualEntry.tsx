@@ -5,7 +5,8 @@ import { ApiError, api } from "@/lib/api";
 import { ScreenShell } from "@/components/ScreenShell";
 import { PinPad } from "@/components/PinPad";
 import { SuccessOverlay } from "@/components/SuccessOverlay";
-import { EventTypePicker, suggestEventType } from "@/components/EventTypePicker";
+import { EventTypePicker } from "@/components/EventTypePicker";
+import { suggestEventType } from "@/lib/eventSuggestion";
 import { beepError, beepSuccess, vibrate } from "@/lib/feedback";
 import type { EventType } from "@/lib/types";
 import { eventTypeDb } from "@/lib/types";
@@ -33,7 +34,7 @@ export function ManualEntry() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ name: string; time: string; type: EventType } | null>(null);
 
-  const suggestion = useMemo(suggestEventType, []);
+  const suggestion = useMemo(() => suggestEventType(), []);
 
   async function submitPin(pin: string) {
     if (!selectedType) return;

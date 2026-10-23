@@ -1,5 +1,6 @@
 package com.assistance.employee.internal.domain;
 
+import com.assistance.employee.internal.crypto.PiiAttributeConverter;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -28,6 +29,25 @@ public class Employee {
     @Column(name = "pin_hash")
     private String pinHash;
 
+    /**
+     * CURP/RFC/NSS cifrados en columna (AES-256-GCM, ver PiiCipher/V8-V9).
+     * Las columnas legacy en claro ({@code curp}, {@code rfc}, {@code nss})
+     * siguen existiendo en el schema (seed de demo las usa) pero
+     * deliberadamente NO se mapean en esta entidad: nada en el código Java
+     * debe volver a leer/escribir PII en claro después de V9.
+     */
+    @Convert(converter = PiiAttributeConverter.class)
+    @Column(name = "curp_enc")
+    private String curp;
+
+    @Convert(converter = PiiAttributeConverter.class)
+    @Column(name = "rfc_enc")
+    private String rfc;
+
+    @Convert(converter = PiiAttributeConverter.class)
+    @Column(name = "nss_enc")
+    private String nss;
+
     @Column(nullable = false)
     private String status;
 
@@ -46,6 +66,12 @@ public class Employee {
     public String getFullName() { return fullName; }
     public UUID getDefaultPlantId() { return defaultPlantId; }
     public String getPinHash() { return pinHash; }
+    public String getCurp() { return curp; }
+    public void setCurp(String curp) { this.curp = curp; }
+    public String getRfc() { return rfc; }
+    public void setRfc(String rfc) { this.rfc = rfc; }
+    public String getNss() { return nss; }
+    public void setNss(String nss) { this.nss = nss; }
     public String getStatus() { return status; }
     public LocalDate getHireDate() { return hireDate; }
     public Instant getCreatedAt() { return createdAt; }

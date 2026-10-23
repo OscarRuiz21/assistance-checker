@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:55432/assistance}
-    username: ${DB_USER:assistance}
-    password: ${DB_PASSWORD:assistance_dev}
+    username: ${DB_APP_USER:assistance_app}
+    password: ${DB_APP_PASSWORD:}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -24,33 +24,58 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+    user: ${DB_MIGRATION_USER:assistance}
+    password: ${DB_MIGRATION_PASSWORD:}
+    placeholders:
+      app_db_password: ${DB_APP_PASSWORD:}
+      app_db_user: ${DB_APP_USER:assistance_app}
 
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
   compression:
     enabled: true
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
 
+# Actuator real: con management.server.port distinto de server.port, Spring
+# Boot mueve TODO actuator (incluido health) al puerto de management — nada
+# de esto se sirve en el puerto público. info/metrics/prometheus/modulith
+# solo se habilitan explícitamente en los perfiles local/demo, atados siempre
+# al puerto de management.
+#
+# PublicHealthController (shared/internal/web) expone GET /actuator/health
+# también en el puerto PÚBLICO delegando al HealthEndpoint real: lo necesita
+# el health check del ALB/ECS (ver infra/modules/app/alb.tf, Fase 4), que
+# golpea el puerto del contenedor, no el de management. SecurityConfig lo
+# deja público (permitAll) igual que cualquier health check estándar.
 management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,modulith
+        include: health
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: never
 
 logging:
   level:
     root: INFO
-    com.assistance: DEBUG
+    com.assistance: INFO
     org.hibernate.SQL: WARN
 
 app:
-  demo:
-    universal-pin: "1234"
-    auth-token: ${DEMO_TOKEN:demo123}
+  pii:
+    key: ${APP_PII_KEY:}
+  auth:
+    issuer-uri: ${AUTH_ISSUER_URI:}
+    jwt-secret: ${APP_JWT_SECRET:}
   cors:
-    # Patrones permisivos para dev (LAN, ngrok, cloudflared, localhost en cualquier puerto).
-    # En producción override con: export CORS_ORIGINS=https://admin.tudominio.com
-    allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,https://*.ngrok-free.app,https://*.trycloudflare.com}
+    # Sin defaults comodines en el perfil base: en prod se exige una lista
+    # explícita de orígenes vía CORS_ORIGINS. Los patrones de LAN/ngrok para
+    # desarrollo viven solo en application-local.yml / application-demo.yml.
+    allowed-origins: ${CORS_ORIGINS:}

@@ -21,7 +21,8 @@ public class AttendanceMapper {
                              UUID plantId,
                              UUID kioskoId,
                              UUID employeeId,
-                             UUID nfcCardId) {
+                             UUID nfcCardId,
+                             UUID recordedByUserId) {
         EventRaw e = new EventRaw();
         e.setId(id);
         e.setTenantId(tenantId);
@@ -35,6 +36,7 @@ public class AttendanceMapper {
         e.setReceivedAt(Instant.now());
         e.setNfcCardId(nfcCardId);
         e.setValid(true);
+        e.setRecordedByUserId(recordedByUserId);
         return e;
     }
 

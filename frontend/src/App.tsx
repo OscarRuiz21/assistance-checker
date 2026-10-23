@@ -5,6 +5,9 @@ import { WaitScreen } from "@/routes/WaitScreen";
 import { NfcEntry } from "@/routes/NfcEntry";
 import { ManualEntry } from "@/routes/ManualEntry";
 import { ErrorScreen } from "@/routes/ErrorScreen";
+import { KioskPair } from "@/routes/KioskPair";
+import Login from "@/routes/admin/Login";
+import { RequireAuth } from "@/routes/admin/RequireAuth";
 
 // Lazy-load admin para no inflar el bundle del kiosko (Recharts ~200KB).
 const AdminDashboard = lazy(() => import("@/routes/admin/Dashboard"));
@@ -26,9 +29,11 @@ function AdminLoader() {
 
 function lazyAdmin(Component: React.LazyExoticComponent<React.ComponentType>) {
   return (
-    <Suspense fallback={<AdminLoader />}>
-      <Component />
-    </Suspense>
+    <RequireAuth>
+      <Suspense fallback={<AdminLoader />}>
+        <Component />
+      </Suspense>
+    </RequireAuth>
   );
 }
 
@@ -42,8 +47,10 @@ export function App() {
         <Route path="/k" element={<KioskoRoot />} />
         <Route path="/k/manual" element={<ManualEntry />} />
         <Route path="/k/error" element={<ErrorScreen />} />
+        <Route path="/k/pair" element={<KioskPair />} />
 
-        {/* Admin — chunk separado, carga on-demand */}
+        {/* Admin — chunk separado, carga on-demand, protegido con JWT */}
+        <Route path="/admin/login" element={<Login />} />
         <Route path="/admin" element={lazyAdmin(AdminDashboard)} />
         <Route path="/admin/empleados" element={lazyAdmin(AdminEmployees)} />
         <Route path="/admin/empleados/:id" element={lazyAdmin(AdminEmployeeDetail)} />

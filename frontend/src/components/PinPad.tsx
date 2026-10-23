@@ -1,5 +1,5 @@
 import { Delete } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 
 interface PinPadProps {
@@ -12,20 +12,29 @@ interface PinPadProps {
 export function PinPad({ length = 4, onComplete, disabled, hasError }: PinPadProps) {
   const [pin, setPin] = useState("");
 
-  useEffect(() => {
+  // Ajuste de estado durante el render (no en un efecto): cuando el padre
+  // marca hasError (PIN incorrecto), hay que limpiar el buffer. Comparar con
+  // el valor anterior de la prop evita el loop de re-render y no dispara el
+  // lint de "setState síncrono en efecto" (ver docs de React: "You Might Not
+  // Need An Effect" — ajustar estado derivado de props durante el render).
+  const [prevHasError, setPrevHasError] = useState(hasError);
+  if (hasError !== prevHasError) {
+    setPrevHasError(hasError);
     if (hasError) setPin("");
-  }, [hasError]);
-
-  useEffect(() => {
-    if (pin.length === length) {
-      onComplete(pin);
-      setPin("");
-    }
-  }, [pin, length, onComplete]);
+  }
 
   const press = (digit: string) => {
-    if (disabled) return;
-    setPin((p) => (p.length < length ? p + digit : p));
+    if (disabled || pin.length >= length) return;
+    const next = pin + digit;
+    if (next.length === length) {
+      // Completar PIN es un evento del usuario (el último tap), no una
+      // sincronización con un sistema externo: se dispara directo desde el
+      // handler, no desde un efecto.
+      setPin("");
+      onComplete(next);
+    } else {
+      setPin(next);
+    }
   };
 
   const backspace = () => {

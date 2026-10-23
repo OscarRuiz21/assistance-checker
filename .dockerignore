@@ -1,0 +1,45 @@
+# Git
+.git/
+.gitignore
+.github/
+
+# Docs (no se necesitan en la imagen)
+docs/
+*.md
+
+# Backend: build artifacts y caches
+backend/build/
+backend/.gradle/
+backend/out/
+backend/bin/
+**/*.class
+backend/src/main/resources/static/
+
+# Frontend: dependencias y build local (se regenera dentro del propio build)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# IDE / editores
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Infra / scripts que no pertenecen a la imagen de runtime
+infra/
+scripts/
+docker-compose.yml
+.dev-logs/
+
+# Secrets / env locales
+.env
+.env.local
+.env.*.local
+backend/src/main/resources/application-secrets*.yml
+
+# Logs
+*.log

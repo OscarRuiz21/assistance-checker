@@ -1,0 +1,150 @@
+name: Deploy
+
+# Dos disparadores:
+#   - workflow_dispatch: despliegue manual a cualquier ambiente (ej. re-deploy
+#     de staging, hotfix de producción fuera de un release).
+#   - release (published): despliegue estándar a producción cuando se publica
+#     un release en GitHub (tag semver).
+#
+# Staging se despliega automáticamente al hacer push/merge a main (ver el
+# job `deploy-staging`, disparado por workflow_run del CI en main). La
+# aprobación de producción se controla con GitHub Environments: el
+# environment "production" debe tener "Required reviewers" configurado en
+# Settings → Environments → production.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente destino"
+        required: true
+        type: choice
+        options: [staging, production]
+      image_tag:
+        description: "Tag de imagen a desplegar (sha largo). Vacío = último build de main."
+        required: false
+        type: string
+  release:
+    types: [published]
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: assistance-checker
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy-staging:
+    name: Deploy a staging
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.assistance-checker.example.com
+    permissions:
+      id-token: write   # requerido por configure-aws-credentials (OIDC)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (OIDC, sin access keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolver tag de imagen
+        id: image
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.sha }}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render task definition (staging)
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infra/ecs/task-definition.staging.json
+          container-name: assistance-backend
+          image: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}
+
+      - name: Deploy a ECS (staging) y esperar estabilidad
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: assistance-checker-staging
+          cluster: assistance-checker-staging
+          wait-for-service-stability: true
+
+  deploy-production:
+    name: Deploy a producción
+    # Requiere aprobación manual vía GitHub Environment protection rule en
+    # "production" (Settings → Environments → production → Required reviewers).
+    if: |
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.assistance-checker.example.com
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (OIDC, sin access keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolver tag de imagen
+        id: image
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.sha }}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render task definition (production)
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infra/ecs/task-definition.production.json
+          container-name: assistance-backend
+          image: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}
+
+      # NOTA — riesgo de migraciones Flyway con múltiples tasks (ver
+      # docs/17-ci-cd-y-despliegue.md § Migraciones y Flyway lock):
+      # Flyway corre dentro del arranque de cada task de la app, usando
+      # DB_MIGRATION_USER. Con "minimum healthy percent" alto en ECS puede
+      # haber 2+ tasks arrancando a la vez: Flyway toma un lock a nivel BD
+      # (tabla flyway_schema_history), así que solo una task aplica las
+      # migraciones pendientes; el resto espera el lock y continúa su
+      # arranque normal. Mitigación adicional recomendada (no implementada
+      # aún): job de migración separado (one-off ECS task) antes del
+      # deployment del servicio, para no acoplar migración a replicas.
+      - name: Deploy a ECS (production) y esperar estabilidad
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: assistance-checker-production
+          cluster: assistance-checker-production
+          wait-for-service-stability: true
+
+      # Plan de rollback (ver docs/17-ci-cd-y-despliegue.md § Rollback):
+      # 1. Si wait-for-service-stability falla, ECS mantiene las tasks
+      #    viejas corriendo (deployment circuit breaker lo revierte si está
+      #    habilitado en el servicio — recomendado: deployment_circuit_breaker
+      #    con rollback=true en Terraform, infra/modules/app).
+      # 2. Rollback manual: re-ejecutar este workflow con
+      #    workflow_dispatch → image_tag = SHA de la última imagen buena.
+      # 3. Rollback de BD: Flyway no hace rollback automático. Si una
+      #    migración rompe algo, se corrige con una migración "forward-fix"
+      #    nueva (nunca editar una migración ya aplicada en prod).
