@@ -3,6 +3,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Demo",
-        allowedDependencies = {"attendance::api", "attendance::event"}
+        allowedDependencies = {"attendance::api", "attendance::event", "shared::api"}
 )
 package com.assistance.demo;

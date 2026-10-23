@@ -8,5 +8,11 @@ import java.util.UUID;
 
 public interface NfcCardRepository extends JpaRepository<NfcCard, UUID> {
 
-    Optional<NfcCard> findByUid(String uid);
+    /**
+     * Filtro explícito por tenant además de RLS (defensa en profundidad,
+     * Fase 2.3): dos tenants podrían tener tarjetas con el mismo UID físico
+     * (UNIQUE es por (tenant_id, uid), no global), así que buscar solo por
+     * UID sin tenant sería ambiguo/incorrecto incluso si RLS lo cubriera.
+     */
+    Optional<NfcCard> findByTenantIdAndUid(UUID tenantId, String uid);
 }

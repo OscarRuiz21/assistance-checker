@@ -7,9 +7,8 @@ import { useEventStream } from "@/lib/sse";
 import { dateLongMx, dateTimeMx, hours, hoursDecimal, timeMx } from "@/lib/format";
 import { AdminShell } from "@/routes/admin/AdminShell";
 import { AvatarInitials } from "@/components/AvatarInitials";
-import {
-  DateRangePicker, presetQuincena, type DateRange,
-} from "@/components/admin/DateRangePicker";
+import { DateRangePicker } from "@/components/admin/DateRangePicker";
+import { presetQuincena, type DateRange } from "@/lib/dateRange";
 import { cn } from "@/lib/cn";
 
 export default function EmployeeDetail() {
@@ -45,7 +44,10 @@ export default function EmployeeDetail() {
     }
   }, [id, range]);
 
-  useEffect(() => { void fetchDaily(); }, [fetchDaily]);
+  useEffect(() => {
+    const tick = () => void fetchDaily();
+    tick();
+  }, [fetchDaily]);
 
   const sseStatus = useEventStream<{ employeeId: string }>(
     "/api/events/stream",
@@ -64,9 +66,18 @@ export default function EmployeeDetail() {
     return { days, completeDays, totalWorked, totalLunch, avgWorked };
   }, [breakdown]);
 
-  const csvUrl = api.exportCsvUrl({
-    employeeId: id, fromDate: range.from, toDate: range.to,
-  });
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      await api.exportCsv({ employeeId: id, fromDate: range.from, toDate: range.to });
+    } catch (e) {
+      setErrorMsg(e instanceof ApiError ? e.message : "No se pudo exportar el CSV");
+    } finally {
+      setExporting(false);
+    }
+  }, [id, range]);
 
   return (
     <AdminShell sseStatus={sseStatus}>
@@ -106,12 +117,15 @@ export default function EmployeeDetail() {
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <DateRangePicker value={range} onChange={setRange} />
-            <a
-              href={csvUrl}
-              className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-sm font-medium hover:bg-secondary/80"
+            <button
+              type="button"
+              onClick={() => void handleExportCsv()}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-sm font-medium hover:bg-secondary/80 disabled:opacity-60"
             >
-              <Download className="h-4 w-4" /> Exportar CSV
-            </a>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Exportar CSV
+            </button>
           </div>
 
           <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">

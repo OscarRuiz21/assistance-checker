@@ -24,6 +24,10 @@ export function WaitScreen() {
           <KeyRound className="h-5 w-5" />
           Captura manual con número y PIN
         </Link>
+
+        <Link to="/k/pair" className="text-xs text-muted-foreground/60 underline-offset-2 hover:underline">
+          Emparejar este dispositivo
+        </Link>
       </div>
     </ScreenShell>
   );

@@ -7,9 +7,8 @@ import { dateTimeMx, hours, hoursDecimal } from "@/lib/format";
 import type { EmployeeWorkSummary } from "@/lib/types";
 import { AdminShell } from "@/routes/admin/AdminShell";
 import { AvatarInitials } from "@/components/AvatarInitials";
-import {
-  DateRangePicker, presetQuincena, type DateRange,
-} from "@/components/admin/DateRangePicker";
+import { DateRangePicker } from "@/components/admin/DateRangePicker";
+import { presetQuincena, type DateRange } from "@/lib/dateRange";
 import { cn } from "@/lib/cn";
 
 export default function Employees() {
@@ -32,7 +31,10 @@ export default function Employees() {
     }
   }, [range]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const tick = () => void refresh();
+    tick();
+  }, [refresh]);
 
   // En vivo: cuando llega un evento, refrescar las sumas
   const sseStatus = useEventStream<unknown>("/api/events/stream", "attendance", () => {

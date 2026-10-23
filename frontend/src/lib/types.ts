@@ -77,6 +77,29 @@ export interface ApiErrorResponse {
   errors: Array<{ field: string; message: string }> | null;
 }
 
+export type AdminRole = "super_admin" | "tenant_admin" | "rh" | "supervisor";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: AdminRole;
+  tenantId: string;
+  plantIds: string[];
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  tokenType: string;
+  expiresIn: number;
+  user: AuthUser;
+}
+
+export interface KioskPairResponse {
+  token: string;
+  kioskoId: string;
+  tenantId: string;
+}
+
 export const eventTypeDb: Record<EventType, string> = {
   CHECK_IN: "check_in",
   CHECK_OUT: "check_out",

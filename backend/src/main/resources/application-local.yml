@@ -1,0 +1,31 @@
+# Perfil de desarrollo local. Defaults inseguros, pero CLARAMENTE marcados
+# como "dev" — nunca usar estos valores fuera de la máquina del desarrollador.
+spring:
+  datasource:
+    password: ${DB_APP_PASSWORD:assistance_app_dev}
+  flyway:
+    password: ${DB_MIGRATION_PASSWORD:assistance_dev}
+    # Ubicación adicional de seeds demo (V20+), solo en local/demo.
+    locations: classpath:db/migration,classpath:db/demo
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Expuesto SOLO en management.server.port (nunca en server.port).
+        include: health,info,metrics,prometheus,modulith
+
+logging:
+  level:
+    com.assistance: DEBUG
+
+app:
+  pii:
+    # DEV ONLY — clave de 32 bytes base64 de ejemplo, nunca usar en prod.
+    key: ${APP_PII_KEY:ZGV2LW9ubHktcGlpLWtleS1kby1ub3QtdXNlLWluLXByb2Q=}
+  auth:
+    # DEV ONLY — secreto HS256 de ejemplo, nunca usar en prod. En prod este
+    # valor debe quedar vacío: solo Cognito (AUTH_ISSUER_URI) firma tokens.
+    jwt-secret: ${APP_JWT_SECRET:dev-only-jwt-hmac-secret-change-me-please-32bytes}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,https://*.ngrok-free.app,https://*.trycloudflare.com}

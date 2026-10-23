@@ -28,12 +28,22 @@ export function EventsTable({
   highlightId: string | null;
 }) {
   const [pulseId, setPulseId] = useState<string | null>(null);
+
+  // Ajuste de estado durante el render: cuando llega un highlightId NUEVO
+  // (distinto del anterior), lo adoptamos de inmediato como pulseId. Evita
+  // llamar setState de forma síncrona dentro de un efecto (ver PinPad para
+  // el mismo patrón); el efecto de abajo solo programa el apagado async.
+  const [prevHighlightId, setPrevHighlightId] = useState(highlightId);
+  if (highlightId !== prevHighlightId) {
+    setPrevHighlightId(highlightId);
+    if (highlightId) setPulseId(highlightId);
+  }
+
   useEffect(() => {
-    if (!highlightId) return;
-    setPulseId(highlightId);
+    if (!pulseId) return;
     const t = setTimeout(() => setPulseId(null), 2200);
     return () => clearTimeout(t);
-  }, [highlightId]);
+  }, [pulseId]);
 
   if (events.length === 0) {
     return (

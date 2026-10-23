@@ -19,11 +19,14 @@ import com.assistance.attendance.internal.service.mapper.AttendanceMapper;
 import com.assistance.attendance.api.CaptureMethod;
 import com.assistance.attendance.api.DashboardKpis;
 import com.assistance.attendance.api.EventView;
+import com.assistance.compliance.api.AuditApi;
 import com.assistance.device.api.DeviceApi;
 import com.assistance.device.api.CardStatus;
 import com.assistance.device.api.NfcCardView;
 import com.assistance.employee.api.EmployeeApi;
 import com.assistance.employee.api.EmployeeView;
+import com.assistance.shared.api.TenantContext;
+import com.assistance.shared.api.TenantScope;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,14 +40,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class AttendanceServiceImpl implements AttendanceApi {
-
-    private static final UUID DEMO_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final UUID DEMO_PLANT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID DEMO_KIOSKO_ID = UUID.fromString("eeee0001-0000-0000-0000-000000000001");
 
     private final EventRawRepository repo;
     private final EmployeeApi employees;
@@ -52,41 +53,72 @@ public class AttendanceServiceImpl implements AttendanceApi {
     private final ApplicationEventPublisher events;
     private final AttendanceMapper mapper;
     private final JdbcTemplate jdbc;
+    private final TimezoneResolver timezoneResolver;
+    private final AuditApi auditApi;
 
     public AttendanceServiceImpl(EventRawRepository repo,
                                  EmployeeApi employees,
                                  DeviceApi devices,
                                  ApplicationEventPublisher events,
                                  AttendanceMapper mapper,
-                                 JdbcTemplate jdbc) {
+                                 JdbcTemplate jdbc,
+                                 TimezoneResolver timezoneResolver,
+                                 AuditApi auditApi) {
         this.repo = repo;
         this.employees = employees;
         this.devices = devices;
         this.events = events;
         this.mapper = mapper;
         this.jdbc = jdbc;
+        this.timezoneResolver = timezoneResolver;
+        this.auditApi = auditApi;
     }
 
     @Override
     @Transactional
     public EventView record(RecordEventCommand cmd) {
+        TenantScope scope = TenantContext.require();
         Optional<NfcCardView> card = lookupCard(cmd);
         EmployeeView employee = resolveEmployee(cmd, card.orElse(null));
         verifyPinIfNeeded(cmd, employee);
 
+        UUID plantId = resolvePlantId(scope, employee);
+        UUID kioskoId = cmd.kioskoId() != null ? cmd.kioskoId() : scope.kioskoId();
+        // El registro manual (hecho por un admin/RH) lleva recordedByUserId;
+        // la captura normal en kiosko (nfc/pin) no.
+        UUID recordedByUserId = cmd.captureMethod() == CaptureMethod.MANUAL ? scope.userId() : null;
+
         EventRaw entity = mapper.toEntity(
                 cmd,
                 UUID.randomUUID(),
-                DEMO_TENANT_ID,
-                DEMO_PLANT_ID,
-                cmd.kioskoId() != null ? cmd.kioskoId() : DEMO_KIOSKO_ID,
+                scope.tenantId(),
+                plantId,
+                kioskoId,
                 employee.id(),
-                card.map(NfcCardView::id).orElse(null));
+                card.map(NfcCardView::id).orElse(null),
+                recordedByUserId);
 
         EventRaw saved = repo.save(entity);
         events.publishEvent(mapper.toEvent(saved, cmd.eventType(), cmd.captureMethod()));
 
         return mapper.toView(saved, employee);
+    }
+
+    /**
+     * Resuelve la planta del evento: la del kiosko si vino de un kiosko
+     * (scope.kioskoId() != null, scope.plantIds() tiene exactamente la
+     * planta de ese kiosko por diseño del filtro de autenticación), o la
+     * planta por defecto del empleado para altas manuales de un admin.
+     */
+    private UUID resolvePlantId(TenantScope scope, EmployeeView employee) {
+        if (scope.kioskoId() != null && scope.plantIds().size() == 1) {
+            return scope.plantIds().iterator().next();
+        }
+        if (employee.defaultPlantId() != null) {
+            return employee.defaultPlantId();
+        }
+        throw new IllegalStateException(
+                "No se pudo resolver la planta del evento: ni el scope ni el empleado la definen");
     }
 
     private Optional<NfcCardView> lookupCard(RecordEventCommand cmd) {
@@ -124,32 +156,56 @@ public class AttendanceServiceImpl implements AttendanceApi {
     @Override
     @Transactional(readOnly = true)
     public List<EventView> list(UUID employeeId, Instant from, Instant to, int limit) {
+        return listInternal(employeeId, from, to, limit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventView> listForExport(UUID employeeId, Instant from, Instant to, int limit) {
+        List<EventView> rows = listInternal(employeeId, from, to, limit);
+        auditApi.record("event.export_csv", "event_raw", employeeId, Map.of(
+                "from", from.toString(),
+                "to", to.toString(),
+                "rowCount", rows.size()));
+        return rows;
+    }
+
+    private List<EventView> listInternal(UUID employeeId, Instant from, Instant to, int limit) {
+        TenantScope scope = TenantContext.require();
+        Set<UUID> plantFilter = scopedPlantIds(scope);
         var pageable = PageRequest.of(0, Math.min(limit, 5000));
         var page = employeeId != null
-                ? repo.findAllByTenantIdAndEmployeeIdAndEventTimeBetweenOrderByEventTimeDesc(
-                        DEMO_TENANT_ID, employeeId, from, to, pageable)
-                : repo.findAllByTenantIdAndEventTimeBetweenOrderByEventTimeDesc(
-                        DEMO_TENANT_ID, from, to, pageable);
+                ? repo.findAllInScopeForEmployee(scope.tenantId(), employeeId, plantFilter, from, to, pageable)
+                : repo.findAllInScope(scope.tenantId(), plantFilter, from, to, pageable);
         var ids = page.getContent().stream().map(EventRaw::getEmployeeId).distinct().toList();
         var employeeMap = ids.stream()
                 .map(employees::findActive)
                 .filter(Optional::isPresent).map(Optional::get)
-                .collect(java.util.stream.Collectors.toMap(EmployeeView::id, ev -> ev));
+                .collect(Collectors.toMap(EmployeeView::id, ev -> ev));
         return page.getContent().stream()
                 .map(e -> mapper.toView(e, employeeMap.get(e.getEmployeeId())))
                 .toList();
     }
 
+    /** null = sin restricción de planta (tenant_admin/super_admin); JPQL lo interpreta como "todas". */
+    private Set<UUID> scopedPlantIds(TenantScope scope) {
+        return scope.plantIds().isEmpty() ? null : scope.plantIds();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<EmployeeWorkSummary> summarize(Instant from, Instant to) {
+        TenantScope scope = TenantContext.require();
+        String tz = timezoneResolver.resolve(scope);
+        String plantFilterSql = plantFilterSql(scope, "plant_id");
+
         // 1) SQL agrega por empleado-día: primer ci, primer lo, primer li, último co, count
         // 2) Sumar a través de los días por empleado
         String sql = """
                 WITH daily AS (
                     SELECT
                         employee_id,
-                        DATE(event_time AT TIME ZONE 'America/Mexico_City') AS biz_date,
+                        DATE(event_time AT TIME ZONE ?) AS biz_date,
                         MIN(CASE WHEN event_type='check_in'  THEN event_time END) AS ci,
                         MIN(CASE WHEN event_type='lunch_out' THEN event_time END) AS lo,
                         MIN(CASE WHEN event_type='lunch_in'  THEN event_time END) AS li,
@@ -158,7 +214,9 @@ public class AttendanceServiceImpl implements AttendanceApi {
                     FROM event_raw
                     WHERE tenant_id = ?::uuid
                       AND event_time BETWEEN ? AND ?
-                    GROUP BY employee_id, DATE(event_time AT TIME ZONE 'America/Mexico_City')
+                      """ + plantFilterSql + """
+
+                    GROUP BY employee_id, DATE(event_time AT TIME ZONE ?)
                 )
                 SELECT
                     employee_id,
@@ -184,7 +242,7 @@ public class AttendanceServiceImpl implements AttendanceApi {
                     empId, "", "",
                     days, evts, office, lunch, worked,
                     lastCi != null ? lastCi.toInstant() : null));
-        }, DEMO_TENANT_ID.toString(), Timestamp.from(from), Timestamp.from(to));
+        }, tz, scope.tenantId().toString(), Timestamp.from(from), Timestamp.from(to), tz);
 
         // Combinar con TODOS los empleados activos (los que no tienen eventos aparecen en cero)
         return employees.listActive().stream()
@@ -212,9 +270,13 @@ public class AttendanceServiceImpl implements AttendanceApi {
     @Override
     @Transactional(readOnly = true)
     public List<DailyBreakdown> dailyBreakdown(UUID employeeId, Instant from, Instant to) {
+        TenantScope scope = TenantContext.require();
+        String tz = timezoneResolver.resolve(scope);
+        String plantFilterSql = plantFilterSql(scope, "plant_id");
+
         String sql = """
                 SELECT
-                    DATE(event_time AT TIME ZONE 'America/Mexico_City') AS biz_date,
+                    DATE(event_time AT TIME ZONE ?) AS biz_date,
                     MIN(CASE WHEN event_type='check_in'  THEN event_time END) AS ci,
                     MIN(CASE WHEN event_type='lunch_out' THEN event_time END) AS lo,
                     MIN(CASE WHEN event_type='lunch_in'  THEN event_time END) AS li,
@@ -223,7 +285,9 @@ public class AttendanceServiceImpl implements AttendanceApi {
                 WHERE tenant_id = ?::uuid
                   AND employee_id = ?::uuid
                   AND event_time BETWEEN ? AND ?
-                GROUP BY DATE(event_time AT TIME ZONE 'America/Mexico_City')
+                  """ + plantFilterSql + """
+
+                GROUP BY DATE(event_time AT TIME ZONE ?)
                 ORDER BY biz_date DESC
                 """;
 
@@ -244,23 +308,47 @@ public class AttendanceServiceImpl implements AttendanceApi {
             boolean complete = ci != null && co != null;
 
             return new DailyBreakdown(date, ci, lo, li, co, office, lunch, worked, complete);
-        }, DEMO_TENANT_ID.toString(), employeeId.toString(),
-                Timestamp.from(from), Timestamp.from(to));
+        }, tz, scope.tenantId().toString(), employeeId.toString(),
+                Timestamp.from(from), Timestamp.from(to), tz);
     }
 
     @Override
     @Transactional(readOnly = true)
     public DashboardKpis dashboard(Instant from, Instant to) {
-        long total = repo.countInRange(DEMO_TENANT_ID, from, to);
-        long unique = repo.countDistinctEmployees(DEMO_TENANT_ID, from, to);
-        Long late = jdbc.queryForObject("""
+        TenantScope scope = TenantContext.require();
+        String tz = timezoneResolver.resolve(scope);
+        Set<UUID> plantFilter = scopedPlantIds(scope);
+        String plantFilterSql = plantFilterSql(scope, "plant_id");
+
+        long total = repo.countInRange(scope.tenantId(), plantFilter, from, to);
+        long unique = repo.countDistinctEmployees(scope.tenantId(), plantFilter, from, to);
+        String lateSql = """
                 SELECT COUNT(*) FROM event_raw
                 WHERE tenant_id = ?::uuid
                   AND event_type = 'check_in'
                   AND event_time BETWEEN ? AND ?
-                  AND EXTRACT(HOUR FROM event_time AT TIME ZONE 'America/Mexico_City') >= 8
-                """, Long.class, DEMO_TENANT_ID.toString(),
-                Timestamp.from(from), Timestamp.from(to));
+                  AND EXTRACT(HOUR FROM event_time AT TIME ZONE ?) >= 8
+                  """ + plantFilterSql;
+        Long late = jdbc.queryForObject(lateSql, Long.class, scope.tenantId().toString(),
+                Timestamp.from(from), Timestamp.from(to), tz);
         return new DashboardKpis(total, unique, late == null ? 0 : late, from, to);
+    }
+
+    /**
+     * Fragmento SQL (con placeholder posicional al final de WHERE) que
+     * restringe por planta cuando el scope no tiene acceso a todas. Los
+     * UUIDs se embeben directamente (no vía bind param) porque
+     * {@link UUID#toString()} nunca puede producir una comilla o `;` —
+     * formato fijo hex-con-guiones — así que no hay riesgo de inyección, y
+     * evita la complejidad de pasar arrays a JdbcTemplate.
+     */
+    private String plantFilterSql(TenantScope scope, String column) {
+        if (scope.plantIds().isEmpty()) {
+            return "";
+        }
+        String inList = scope.plantIds().stream()
+                .map(id -> "'" + id + "'")
+                .collect(Collectors.joining(","));
+        return " AND " + column + " IN (" + inList + ") ";
     }
 }

@@ -1,0 +1,28 @@
+# Perfil de demo pública (internet, LAN de feria, etc.). Igual que local pero
+# pensado para que DemoController/DemoSeedService queden habilitados y las
+# credenciales de demo vivan documentadas (no en el repo en texto claro para
+# prod real, pero el demo en sí es público por diseño).
+spring:
+  datasource:
+    password: ${DB_APP_PASSWORD:assistance_app_dev}
+  flyway:
+    password: ${DB_MIGRATION_PASSWORD:assistance_dev}
+    locations: classpath:db/migration,classpath:db/demo
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,modulith
+
+logging:
+  level:
+    com.assistance: INFO
+
+app:
+  pii:
+    key: ${APP_PII_KEY:ZGV2LW9ubHktcGlpLWtleS1kby1ub3QtdXNlLWluLXByb2Q=}
+  auth:
+    jwt-secret: ${APP_JWT_SECRET:dev-only-jwt-hmac-secret-change-me-please-32bytes}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,https://*.ngrok-free.app,https://*.trycloudflare.com}

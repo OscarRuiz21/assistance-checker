@@ -35,10 +35,12 @@ backend/src/main/resources/application-secrets*.yml
 postgres-data/
 
 # Terraform
-infra/.terraform/
-infra/*.tfstate
-infra/*.tfstate.backup
-infra/*.tfvars
+**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.backup
+infra/**/*.tfvars
+infra/**/.terraform.tfstate.lock.info
+# .terraform.lock.hcl SÍ se versiona (fija versiones de providers)
 
 # Sistema
 Thumbs.db

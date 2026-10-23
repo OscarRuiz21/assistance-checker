@@ -14,6 +14,15 @@ public interface AttendanceApi {
      */
     List<EventView> list(UUID employeeId, Instant from, Instant to, int limit);
 
+    /**
+     * Igual que {@link #list}, pero además registra en {@code audit_log}
+     * (vía AuditApi) que se exportaron estos datos — para usar en el
+     * endpoint de export CSV (LFPDPPP: toda lectura masiva de PII debe
+     * quedar auditada). AGENTE A: el controller de export.csv debe llamar
+     * este método en vez de {@link #list}.
+     */
+    List<EventView> listForExport(UUID employeeId, Instant from, Instant to, int limit);
+
     DashboardKpis dashboard(Instant from, Instant to);
 
     /**
